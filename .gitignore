@@ -1,0 +1,32 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+
+# Data files
+data/raw/*
+!data/raw/.gitkeep
+data/
+
+# Notebook checkpoints
+*.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# IDE files
+.idea/
+.vscode/
+
+# Model files
+models/

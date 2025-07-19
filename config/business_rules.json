@@ -1,0 +1,30 @@
+{
+    "decision_framework": {
+        "auto_decline": {
+            "conditions": [
+                {"field": "fraud_probability", "operator": ">", "value": 0.9},
+                {"field": "country", "operator": "in", "value": ["NG", "RU", "BY"]},
+                {"field": "time_since_signup", "operator": "<", "value": 2}
+            ],
+            "any_match": true
+        },
+        "manual_review": {
+            "conditions": [
+                {"field": "fraud_probability", "operator": ">", "value": 0.7},
+                {"field": "purchase_value", "operator": ">", "value": 500},
+                {"field": "txn_velocity", "operator": ">", "value": 5}
+            ],
+            "any_match": true
+        }
+    },
+    "cost_parameters": {
+        "false_positive_cost": 5.00,
+        "false_negative_cost": 250.00,
+        "review_cost": 3.50
+    },
+    "risk_parameters": {
+        "high_risk_countries": ["NG", "RU", "BY", "KP"],
+        "new_account_threshold": 2,
+        "high_value_threshold": 500
+    }
+}

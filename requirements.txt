@@ -1,24 +1,45 @@
-# Core data analysis
+# Core Data Science
 numpy==1.26.4
 pandas==2.2.1
-scikit-learn==1.4.1.post1
-joblib==1.3.2
-
-# Visualization
-matplotlib==3.8.3
-seaborn==0.13.2
-
-# Fraud detection specific
+scikit-learn==1.4.1
 imbalanced-learn==0.10.1
+scipy==1.12.0
+
+# Machine Learning
 xgboost==2.0.3
 lightgbm==4.1.0
 shap==0.44.0
+optuna==3.6.0  # For hyperparameter optimization
 
-# API dependencies
-flask==2.3.2
+# API and Web
+fastapi==0.110.0
+uvicorn==0.29.0
+pydantic==2.6.0
+python-multipart==0.0.9
+
+# Data Processing
+pyarrow==15.0.0  # Efficient data handling
 python-dotenv==1.0.1
 
-# Dev tools
+# Monitoring and Logging
+prometheus-client==0.20.0
+structlog==24.1.0
+
+# Testing and Quality
 pytest==8.0.0
+pytest-cov==4.1.0
 flake8==7.0.0
-jupyter==1.0.0
+mypy==1.8.0
+types-python-dateutil==2.8.19.20240106
+
+# Utilities
+joblib==1.3.2
+tqdm==4.66.2  # Progress bars
+python-dateutil==2.8.2
+
+# Notebook Support
+jupyterlab==4.1.0
+ipykernel==6.29.0
+
+# Production
+gunicorn==21.2.0  # Production server

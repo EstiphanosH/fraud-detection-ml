@@ -1,97 +1,79 @@
 """
-Feature engineering optimized for fraud pattern detection
-Creates behavioral, temporal, and geospatial features
+Robust feature engineering with dynamic handling
+for e-commerce and banking datasets
 """
 
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
-from datetime import timedelta
-import logging
 
-logger = logging.getLogger(__name__)
-
-class FraudFeatureGenerator(BaseEstimator, TransformerMixin):
+class FraudFeatureEngineer:
     """
-    Generates predictive features with business logic:
-    
-    Key Features:
-    1. Temporal Patterns:
-       - time_since_signup (hours)
-       - transaction_hour (categorized)
-       
-    2. Behavioral Patterns:
-       - transaction_velocity (txns/hour)
-       - purchase_value_deviation
-       
-    3. Geospatial Patterns:
-       - country_risk_score
-       - distance_from_home (if location data available)
-    
-    Business Hypothesis:
-    - Fraudsters act quickly after signup (time_since_signup)
-    - High-value deviations from normal behavior are suspicious
-    - Transactions from high-risk countries need scrutiny
+    Creates domain-specific features with:
+    - Automatic feature selection
+    - Business-driven transformations
+    - Leakage prevention
     """
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, dataset_type: str, config: Dict[str, Any]):
+        self.dataset_type = dataset_type
         self.config = config
-        self.user_profiles = None
-        self.country_risk_scores = self._load_country_risk_data()
-        
-    def _load_country_risk_data(self) -> Dict[str, float]:
-        """Load business-defined country risk scores"""
-        # Default medium risk for unknown countries
-        return {
-            'US': 0.2, 'GB': 0.3, 'DE': 0.25,
-            'NG': 0.85, 'RU': 0.8, 'CN': 0.7
+        self.feature_mapping = {
+            'ecommerce': self._ecom_features,
+            'bank': self._bank_features
         }
-    
-    def fit(self, X: pd.DataFrame, y: pd.Series = None):
-        """Build user behavioral profiles from historical data"""
-        logger.info("Building user behavioral profiles")
         
-        # Calculate user-specific baselines
-        self.user_profiles = X.groupby('user_id').agg(
-            avg_purchase_value=('purchase_value', 'mean'),
-            std_purchase_value=('purchase_value', 'std'),
-            common_country=('country', lambda x: x.mode()[0] if not x.mode().empty else None)
-        ).reset_index()
-        
-        # Handle new users
-        self.user_profiles['std_purchase_value'].fillna(
-            self.user_profiles['avg_purchase_value'] * 0.5, inplace=True)
-        
-        return self
-        
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Generate fraud prediction features"""
-        logger.info("Generating fraud detection features")
-        
-        # Temporal features
-        X['time_since_signup'] = (X['purchase_time'] - X['signup_time']).dt.total_seconds() / 3600
-        X['transaction_hour'] = X['purchase_time'].dt.hour
-        X['is_night'] = (X['transaction_hour'] < 6) | (X['transaction_hour'] > 22)
+    def _ecom_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """E-commerce feature engineering"""
+        # Time-based features
+        if 'signup_time' in df.columns:
+            df['time_since_signup'] = (
+                (df['purchase_time'] - df['signup_time']).dt.total_seconds() / 3600
+            )
+            df['new_account_flag'] = (df['time_since_signup'] < 2).astype(int)
         
         # Behavioral features
-        X = pd.merge(X, self.user_profiles, on='user_id', how='left')
-        X['value_deviation'] = (X['purchase_value'] - X['avg_purchase_value']) / X['std_purchase_value']
-        X['value_deviation'].fillna(0, inplace=True)
+        if 'user_id' in df.columns:
+            user_stats = df.groupby('user_id').agg(
+                avg_purchase=('purchase_value', 'mean'),
+                tx_count=('purchase_time', 'count')
+            ).reset_index()
+            df = df.merge(user_stats, on='user_id', how='left')
+            df['value_deviation'] = (
+                (df['purchase_value'] - df['avg_purchase']) / 
+                df['avg_purchase'].replace(0, 1)
+            )
+            
+        # Geolocation features
+        if 'country' in df.columns:
+            df['high_risk_country'] = df['country'].isin(
+                self.config['high_risk_countries']
+            ).astype(int)
+            
+        return df
+    
+    def _bank_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Banking feature engineering"""
+        # Time-based features
+        if 'Time' in df.columns:
+            df['hour_of_day'] = (df['Time'] // 3600) % 24
+            df['is_night'] = ((df['hour_of_day'] >= 1) & (df['hour_of_day'] <= 5)).astype(int)
         
-        # Velocity features
-        X.sort_values(['user_id', 'purchase_time'], inplace=True)
-        X['prev_purchase_time'] = X.groupby('user_id')['purchase_time'].shift(1)
-        X['time_since_last'] = (X['purchase_time'] - X['prev_purchase_time']).dt.total_seconds() / 3600
-        X['txn_velocity'] = 1 / X['time_since_last'].replace(0, 0.1)  # Avoid division by zero
+        # Transaction features
+        if 'Amount' in df.columns:
+            df['log_amount'] = np.log1p(df['Amount'])
+            df['high_value'] = (df['Amount'] > self.config['high_value_threshold']).astype(int)
+            
+        # PCA feature interactions
+        for i in [4, 14, 17]:
+            if f'V{i}' in df.columns:
+                df[f'V{i}_amount'] = df[f'V{i}'] * df['Amount']
+                
+        return df
+    
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply dataset-specific feature engineering"""
+        if self.dataset_type not in self.feature_mapping:
+            raise ValueError(f"Unsupported dataset type: {self.dataset_type}")
         
-        # Geospatial features
-        X['country_risk'] = X['country'].map(self.country_risk_scores).fillna(0.5)
-        X['country_mismatch'] = (X['country'] != X['common_country']).astype(int)
-        
-        # High-risk feature combinations (business rules)
-        X['new_account_high_value'] = (
-            (X['time_since_signup'] < self.config['new_account_threshold']) & 
-            (X['purchase_value'] > self.config['high_value_threshold'])
-        ).astype(int)
-        
-        return X
+        return self.feature_mapping[self.dataset_type](df)

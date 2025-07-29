@@ -1,0 +1,123 @@
+# .github/workflows/main.yml
+
+name: CI/CD Pipeline for Fraud Detection ML
+
+on:
+  push:
+    branches:
+      - main
+      - develop # Assuming a develop branch for feature integration
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest # Use a Linux runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install imblearn for SMOTE/ADASYN
+          pip install scikit-learn imbalanced-learn pandas numpy lightgbm shap flask gunicorn pytest flake8
+          # You should ideally create a requirements.txt file and install from there:
+          # pip install -r requirements.txt
+        # Note: For a production setup, ensure all dependencies are listed in a requirements.txt
+        # and install from there for consistency.
+
+      - name: Lint code with Flake8
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
+
+      - name: Create mock data for tests
+        # This step is crucial because unit tests rely on mock_data.
+        # In a real project, you might have these mock data files committed,
+        # or generate them as part of a setup script.
+        run: |
+          mkdir -p tests/mock_data
+          mkdir -p tests/mock_models
+          # Create dummy Fraud_Data.csv
+          echo "user_id,signup_time,purchase_time,purchase_value,device_id,source,browser,sex,age,ip_address,class" > tests/mock_data/Fraud_Data.csv
+          echo "1,2023-01-01 10:00:00,2023-01-01 10:30:00,100,A1,SEO,Chrome,M,25,1.0.0.1,0" >> tests/mock_data/Fraud_Data.csv
+          echo "2,2023-01-01 11:00:00,2023-01-01 11:30:00,200,B2,Ads,Firefox,F,30,1.0.0.2,1" >> tests/mock_data/Fraud_Data.csv
+          # Create dummy creditcard.csv
+          echo "Time,V1,V2,V3,V4,V5,V6,V7,V8,V9,V10,V11,V12,V13,V14,V15,V16,V17,V18,V19,V20,V21,V22,V23,V24,V25,V26,V27,V28,Amount,Class" > tests/mock_data/creditcard.csv
+          echo "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,10.0,0" >> tests/mock_data/creditcard.csv
+          echo "2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,20.0,1" >> tests/mock_data/creditcard.csv
+          # Create dummy IpAddress_to_Country.csv
+          echo "lower_bound_ip_address,upper_bound_ip_address,country" > tests/mock_data/IpAddress_to_Country.csv
+          echo "16777216.0,16777471.0,Australia" >> tests/mock_data/IpAddress_to_Country.csv
+          echo "16777472.0,16777727.0,China" >> tests/mock_data/IpAddress_to_Country.csv
+          echo "2130706432.0,2130706687.0,United States" >> tests/mock_data/IpAddress_to_Country.csv
+          echo "3409154048.0,3409154303.0,Canada" >> tests/mock_data/IpAddress_to_Country.csv
+
+          # Create dummy models for API tests (as they are loaded by app.py)
+          # These are just placeholder files. In a real scenario, you'd train and save them.
+          python -c "import joblib; from unittest.mock import MagicMock; import numpy as np; joblib.dump(MagicMock(predict_proba=lambda x: np.array([[0.1, 0.9]])), 'tests/mock_models/ecommerce_lgbm_model.pkl')"
+          python -c "import joblib; from unittest.mock import MagicMock; import numpy as np; joblib.dump(MagicMock(predict_proba=lambda x: np.array([[0.9, 0.1]])), 'tests/mock_models/bank_lgbm_model.pkl')"
+          python -c "import joblib; joblib.dump(['purchase_value', 'age', 'purchase_hour', 'purchase_dayofweek', 'purchase_month', 'time_since_signup', 'user_transaction_count', 'source_Direct', 'source_SEO', 'browser_Firefox', 'browser_Safari', 'browser_Edge', 'sex_M', 'country_Canada', 'country_Mexico', 'country_USA'], 'tests/mock_models/ecommerce_features.joblib')"
+          python -c "import joblib; joblib.dump([f'V{i}' for i in range(1,29)] + ['Time', 'Amount'], 'tests/mock_models/bank_features.joblib')"
+          # Dummy preprocessors (can be empty or simple mock)
+          python -c "import joblib; from sklearn.preprocessing import StandardScaler; joblib.dump(StandardScaler(), 'tests/mock_models/ecommerce_preprocessor.pkl')"
+          python -c "import joblib; from sklearn.preprocessing import StandardScaler; joblib.dump(StandardScaler(), 'tests/mock_models/bank_preprocessor.pkl')"
+
+      - name: Run Unit Tests
+        run: |
+          # Add the project root to PYTHONPATH so scripts can be imported
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/test_unit.py
+
+      - name: Run API Tests
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          pytest tests/test_api.py
+
+      - name: Run Data Pipeline (Validation)
+        # This step ensures the data processing scripts run without syntax errors
+        # and produce expected output files. It doesn't verify data quality.
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python scripts/data_pipeline.py
+          # You might want to check for the existence of processed files here
+          ls data/processed/
+
+      - name: Run Model Training (Validation)
+        # This step ensures the model training scripts run without syntax errors
+        # and produce model artifacts. It doesn't verify model performance.
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          python models/model_training.py
+          # You might want to check for the existence of model files here
+          ls models/
+
+      - name: Build Docker Image (Placeholder)
+        # This is a placeholder for building your Docker image.
+        # Replace with actual Docker build commands if you have a Dockerfile.
+        run: |
+          echo "Building Docker image for deployment..."
+          # docker build -t fraud-detection-api:latest .
+          # echo "Docker image built."
+
+      - name: Deploy to Production (Placeholder)
+        # This is a placeholder for your deployment steps.
+        # This would typically involve pushing the Docker image to a registry
+        # and then deploying it to your cloud provider (e.g., Kubernetes, AWS ECS, GCP Cloud Run).
+        # This step often requires environment-specific secrets.
+        run: |
+          echo "Deploying to production environment..."
+          # Example:
+          # docker push your-registry/fraud-detection-api:latest
+          # kubectl apply -f kubernetes/deployment.yaml
+          echo "Deployment step completed (placeholder)."
